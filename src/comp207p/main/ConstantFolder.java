@@ -17,27 +17,36 @@ import org.apache.bcel.util.InstructionFinder;
 
 
 
-public class ConstantFolder
-{
+public class ConstantFolder {
 	ClassParser parser = null;
 	ClassGen gen = null;
 
 	JavaClass original = null;
 	JavaClass optimized = null;
 
-	public ConstantFolder(String classFilePath)
-	{
-		try{
+	public ConstantFolder(String classFilePath)	{
+		try {
 			this.parser = new ClassParser(classFilePath);
 			this.original = this.parser.parse();
 			this.gen = new ClassGen(this.original);
-		} catch(IOException e){
+		} catch(IOException e) {
 			e.printStackTrace();
 		}
 	}
+
+	private boolean checkConstantVar(InstructionList instList, int storeIndex) {
+		int count = 0;
+		for (InstructionHandle handle : instList.getInstructionHandles()) {
+			if (handle.getInstruction() instanceof StoreInstruction) {
+				int index = ((StoreInstruction) handle.getInstruction()).getIndex();
+				if (storeIndex == index) count++;
+			}	
+			if (count > 1) return false;
+		}
+		return true;
+	}
 	
-	private void optimizeMethod(ClassGen cgen, ConstantPoolGen cpgen, Method method) 
-	{
+	private void optimizeMethod(ClassGen cgen, ConstantPoolGen cpgen, Method method) {
 		// Get the Code of the method, which is a collection of bytecode instructions
 		Code methodCode = method.getCode();
 
@@ -49,48 +58,50 @@ public class ConstantFolder
 		MethodGen methodGen = new MethodGen(method.getAccessFlags(), method.getReturnType(), method.getArgumentTypes(), null, method.getName(), cgen.getClassName(), instList, cpgen);
 
 		// InstructionHandle is a wrapper for actual Instructions
-		for (InstructionHandle handle : instList.getInstructionHandles())
-		{
+		for (InstructionHandle handle : instList.getInstructionHandles())	{
 			if (handle.getInstruction() instanceof StoreInstruction) {
-				if (handle.getPrev().getInstruction() instanceof BIPUSH) {
-					Number lastStackPush = ((BIPUSH) handle.getPrev().getInstruction()).getValue();
-					System.out.println(handle.getPrev().getInstruction());
-					System.out.println(lastStackPush);
-				}
-				if (handle.getPrev().getInstruction() instanceof SIPUSH) {
-					Number lastStackPush = ((SIPUSH) handle.getPrev().getInstruction()).getValue();
-					System.out.println(handle.getPrev().getInstruction());
-					System.out.println(lastStackPush);
-				}
-				if (handle.getPrev().getInstruction() instanceof ICONST) {
-					Number lastStackPush = ((ICONST) handle.getPrev().getInstruction()).getValue();
-					System.out.println(handle.getPrev().getInstruction());
-					System.out.println(lastStackPush);
-				}
-				if (handle.getPrev().getInstruction() instanceof DCONST) {
-					Number lastStackPush = ((DCONST) handle.getPrev().getInstruction()).getValue();
-					System.out.println(handle.getPrev().getInstruction());
-					System.out.println(lastStackPush);
-				}
-				if (handle.getPrev().getInstruction() instanceof FCONST) {
-					Number lastStackPush = ((FCONST) handle.getPrev().getInstruction()).getValue();
-					System.out.println(handle.getPrev().getInstruction());
-					System.out.println(lastStackPush);
-				}
-				if (handle.getPrev().getInstruction() instanceof LCONST) {
-					Number lastStackPush = ((LCONST) handle.getPrev().getInstruction()).getValue();
-					System.out.println(handle.getPrev().getInstruction());
-					System.out.println(lastStackPush);
-				}
-				if (handle.getPrev().getInstruction() instanceof LDC) {
-					Number lastStackPush = (Number) ((LDC) handle.getPrev().getInstruction()).getValue(cpgen);
-					System.out.println(handle.getPrev().getInstruction());
-					System.out.println(lastStackPush);
-				}
-				if (handle.getPrev().getInstruction() instanceof LDC2_W) {
-					Number lastStackPush = ((LDC2_W) handle.getPrev().getInstruction()).getValue(cpgen);
-					System.out.println(handle.getPrev().getInstruction());
-					System.out.println(lastStackPush);
+				int index = ((StoreInstruction) handle.getInstruction()).getIndex();
+				if (checkConstantVar(instList, index)) {
+					if (handle.getPrev().getInstruction() instanceof BIPUSH) {
+						Number lastStackPush = ((BIPUSH) handle.getPrev().getInstruction()).getValue();
+						System.out.println(handle.getPrev().getInstruction());
+						System.out.println(lastStackPush);
+					}
+					else if (handle.getPrev().getInstruction() instanceof SIPUSH) {
+						Number lastStackPush = ((SIPUSH) handle.getPrev().getInstruction()).getValue();
+						System.out.println(handle.getPrev().getInstruction());
+						System.out.println(lastStackPush);
+					}
+					else if (handle.getPrev().getInstruction() instanceof ICONST) {
+						Number lastStackPush = ((ICONST) handle.getPrev().getInstruction()).getValue();
+						System.out.println(handle.getPrev().getInstruction());
+						System.out.println(lastStackPush);
+					}
+					else if (handle.getPrev().getInstruction() instanceof DCONST) {
+						Number lastStackPush = ((DCONST) handle.getPrev().getInstruction()).getValue();
+						System.out.println(handle.getPrev().getInstruction());
+						System.out.println(lastStackPush);
+					}
+					else if (handle.getPrev().getInstruction() instanceof FCONST) {
+						Number lastStackPush = ((FCONST) handle.getPrev().getInstruction()).getValue();
+						System.out.println(handle.getPrev().getInstruction());
+						System.out.println(lastStackPush);
+					}
+					else if (handle.getPrev().getInstruction() instanceof LCONST) {
+						Number lastStackPush = ((LCONST) handle.getPrev().getInstruction()).getValue();
+						System.out.println(handle.getPrev().getInstruction());
+						System.out.println(lastStackPush);
+					}
+					else if (handle.getPrev().getInstruction() instanceof LDC) {
+						Number lastStackPush = (Number) ((LDC) handle.getPrev().getInstruction()).getValue(cpgen);
+						System.out.println(handle.getPrev().getInstruction());
+						System.out.println(lastStackPush);
+					}
+					else if (handle.getPrev().getInstruction() instanceof LDC2_W) {
+						Number lastStackPush = ((LDC2_W) handle.getPrev().getInstruction()).getValue(cpgen);
+						System.out.println(handle.getPrev().getInstruction());
+						System.out.println(lastStackPush);
+					}
 				}
 			}
 		}
@@ -109,8 +120,7 @@ public class ConstantFolder
 		cgen.replaceMethod(method, newMethod);
 	}
 
-	public void optimize()
-	{
+	public void optimize() {
 		ClassGen cgen = new ClassGen(original);
 		ConstantPoolGen cpgen = cgen.getConstantPool();
 		cgen.setMajor(50);
@@ -124,8 +134,7 @@ public class ConstantFolder
 	}
 
 	
-	public void write(String optimisedFilePath)
-	{
+	public void write(String optimisedFilePath)	{
 		this.optimize();
 
 		try {
