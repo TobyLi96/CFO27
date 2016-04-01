@@ -45,6 +45,70 @@ public class ConstantFolder {
 		}
 		return true;
 	}
+
+	private void convertLoadInst(InstructionList instList, InstructionHandle pushHandle, int storeIndex, Number pushVal) {
+		InstructionHandle handle = pushHandle;
+		while (handle != null) {
+			if (handle.getInstruction() instanceof LoadInstruction) {
+				int loadIndex = ((LoadInstruction) handle.getInstruction()).getIndex();
+				if (loadIndex == storeIndex) {
+					if (pushHandle.getInstruction() instanceof BIPUSH) {
+						instList.insert(handle, new BIPUSH((byte) ((int) pushVal)));
+					}
+					else if (pushHandle.getInstruction() instanceof SIPUSH) {
+						instList.insert(handle, new SIPUSH((short) ((int) pushVal)));
+					}
+					else if (pushHandle.getInstruction() instanceof ICONST) {
+						instList.insert(handle, new ICONST((int) pushVal));
+					}
+					else if (pushHandle.getInstruction() instanceof DCONST) {
+						instList.insert(handle, new DCONST((double) pushVal));
+					}
+					else if (pushHandle.getInstruction() instanceof FCONST) {
+						instList.insert(handle, new FCONST((float) pushVal));
+					}
+					else if (pushHandle.getInstruction() instanceof LCONST) {
+						instList.insert(handle, new LCONST((long) pushVal));
+					}
+					else if (pushHandle.getInstruction() instanceof LDC) {
+						instList.insert(handle, new LDC(((CPInstruction) pushHandle.getInstruction()).getIndex()));
+					}
+					else if (pushHandle.getInstruction() instanceof LDC2_W) {
+						instList.insert(handle, new LDC2_W(((CPInstruction) pushHandle.getInstruction()).getIndex()));	
+					}
+					try {
+						InstructionHandle temp = handle;
+						handle = handle.getNext();
+						instList.redirectBranches(temp, temp.getPrev());
+						instList.delete(temp);
+						instList.setPositions();
+					} catch (Exception e) {
+						// do nothing
+					}
+				}
+				else {
+					handle = handle.getNext();
+				}
+			}
+			else {
+				handle = handle.getNext();
+			}
+		}
+		try {
+			instList.redirectBranches(pushHandle.getNext(), pushHandle);
+			instList.delete(pushHandle.getNext());
+			instList.setPositions(true);
+		} catch (Exception e) {
+			// do nothing
+		}
+		try {
+			instList.redirectBranches(pushHandle, pushHandle.getPrev());
+			instList.delete(pushHandle);
+			instList.setPositions(true);
+		} catch (Exception e) {
+			// do nothing
+		}
+	}
 	
 	private void optimizeMethod(ClassGen cgen, ConstantPoolGen cpgen, Method method) {
 		// Get the Code of the method, which is a collection of bytecode instructions
@@ -63,44 +127,36 @@ public class ConstantFolder {
 				int index = ((StoreInstruction) handle.getInstruction()).getIndex();
 				if (checkConstantVar(instList, index)) {
 					if (handle.getPrev().getInstruction() instanceof BIPUSH) {
-						Number lastStackPush = ((BIPUSH) handle.getPrev().getInstruction()).getValue();
-						System.out.println(handle.getPrev().getInstruction());
-						System.out.println(lastStackPush);
+						Number pushVal = ((BIPUSH) handle.getPrev().getInstruction()).getValue();
+						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
 					else if (handle.getPrev().getInstruction() instanceof SIPUSH) {
-						Number lastStackPush = ((SIPUSH) handle.getPrev().getInstruction()).getValue();
-						System.out.println(handle.getPrev().getInstruction());
-						System.out.println(lastStackPush);
+						Number pushVal = ((SIPUSH) handle.getPrev().getInstruction()).getValue();
+						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
 					else if (handle.getPrev().getInstruction() instanceof ICONST) {
-						Number lastStackPush = ((ICONST) handle.getPrev().getInstruction()).getValue();
-						System.out.println(handle.getPrev().getInstruction());
-						System.out.println(lastStackPush);
+						Number pushVal = ((ICONST) handle.getPrev().getInstruction()).getValue();
+						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
 					else if (handle.getPrev().getInstruction() instanceof DCONST) {
-						Number lastStackPush = ((DCONST) handle.getPrev().getInstruction()).getValue();
-						System.out.println(handle.getPrev().getInstruction());
-						System.out.println(lastStackPush);
+						Number pushVal = ((DCONST) handle.getPrev().getInstruction()).getValue();
+						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
 					else if (handle.getPrev().getInstruction() instanceof FCONST) {
-						Number lastStackPush = ((FCONST) handle.getPrev().getInstruction()).getValue();
-						System.out.println(handle.getPrev().getInstruction());
-						System.out.println(lastStackPush);
+						Number pushVal = ((FCONST) handle.getPrev().getInstruction()).getValue();
+						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
 					else if (handle.getPrev().getInstruction() instanceof LCONST) {
-						Number lastStackPush = ((LCONST) handle.getPrev().getInstruction()).getValue();
-						System.out.println(handle.getPrev().getInstruction());
-						System.out.println(lastStackPush);
+						Number pushVal = ((LCONST) handle.getPrev().getInstruction()).getValue();
+						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
 					else if (handle.getPrev().getInstruction() instanceof LDC) {
-						Number lastStackPush = (Number) ((LDC) handle.getPrev().getInstruction()).getValue(cpgen);
-						System.out.println(handle.getPrev().getInstruction());
-						System.out.println(lastStackPush);
+						Number pushVal = (Number) ((LDC) handle.getPrev().getInstruction()).getValue(cpgen);
+						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
 					else if (handle.getPrev().getInstruction() instanceof LDC2_W) {
-						Number lastStackPush = ((LDC2_W) handle.getPrev().getInstruction()).getValue(cpgen);
-						System.out.println(handle.getPrev().getInstruction());
-						System.out.println(lastStackPush);
+						Number pushVal = ((LDC2_W) handle.getPrev().getInstruction()).getValue(cpgen);
+						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
 				}
 			}
