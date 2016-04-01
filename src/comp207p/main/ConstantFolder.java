@@ -34,6 +34,16 @@ public class ConstantFolder {
 		}
 	}
 
+	private void deleteInst(InstructionList instList, InstructionHandle handle) {
+		try {
+			instList.redirectBranches(handle, handle.getPrev());
+			instList.delete(handle);
+			instList.setPositions();
+		} catch (Exception e) {
+			//do nothing
+		}
+	}
+
 	private boolean checkConstantVar(InstructionList instList, int storeIndex) {
 		int count = 0;
 		for (InstructionHandle handle : instList.getInstructionHandles()) {
@@ -76,15 +86,9 @@ public class ConstantFolder {
 					else if (pushHandle.getInstruction() instanceof LDC2_W) {
 						instList.insert(handle, new LDC2_W(((CPInstruction) pushHandle.getInstruction()).getIndex()));	
 					}
-					try {
-						InstructionHandle temp = handle;
-						handle = handle.getNext();
-						instList.redirectBranches(temp, temp.getPrev());
-						instList.delete(temp);
-						instList.setPositions();
-					} catch (Exception e) {
-						// do nothing
-					}
+					InstructionHandle temp = handle;
+					handle = handle.getNext();
+					deleteInst(instList, temp);
 				}
 				else {
 					handle = handle.getNext();
@@ -94,21 +98,98 @@ public class ConstantFolder {
 				handle = handle.getNext();
 			}
 		}
-		try {
-			instList.redirectBranches(pushHandle.getNext(), pushHandle);
-			instList.delete(pushHandle.getNext());
-			instList.setPositions(true);
-		} catch (Exception e) {
-			// do nothing
+		deleteInst(instList, pushHandle.getNext());
+		deleteInst(instList, pushHandle;
+	}
+
+	private Number[] getArithmeticVals(ConstantPoolGen cpgen, InstructionHandle handle) {
+		int counter = 2;
+		Number[] valueOnStack = new Number[2];
+		for (counter = 2; counter != 0; counter--) {
+			handle = handle.getPrev();
+			if (handle.getInstruction() instanceof BIPUSH) {
+				valueOnStack[counter-1] = ((BIPUSH) handle.getInstruction()).getValue();
+			}
+			else if (handle.getInstruction() instanceof SIPUSH) {
+				valueOnStack[counter-1] = ((SIPUSH) handle.getInstruction()).getValue();
+			}
+			else if (handle.getInstruction() instanceof ICONST) {
+				valueOnStack[counter-1] = ((ICONST) handle.getInstruction()).getValue();
+			}
+			else if (handle.getInstruction() instanceof DCONST) {
+				valueOnStack[counter-1] = ((DCONST) handle.getInstruction()).getValue();
+			}
+			else if (handle.getInstruction() instanceof FCONST) {
+				valueOnStack[counter-1] = ((FCONST) handle.getInstruction()).getValue();
+			}
+			else if (handle.getInstruction() instanceof LCONST) {
+				valueOnStack[counter-1] = ((LCONST) handle.getInstruction()).getValue();
+			}
+			else if (handle.getInstruction() instanceof LDC) {
+				valueOnStack[counter-1] = (Number)((LDC) handle.getInstruction()).getValue(cpgen);
+			}
+			else if (handle.getInstruction() instanceof LDC2_W) {
+				valueOnStack[counter-1] = ((LDC2_W) handle.getInstruction()).getValue(cpgen);
+			}
 		}
-		try {
-			instList.redirectBranches(pushHandle, pushHandle.getPrev());
-			instList.delete(pushHandle);
-			instList.setPositions(true);
-		} catch (Exception e) {
-			// do nothing
+		return valueOnStack;
+	}
+	
+	private Number getArithmeticRes(ConstantPoolGen cpgen, InstructionHandle handle) {
+		Number[] valueOnStack = getArithmeticVals(cpgen, handle);
+		if (valueOnStack[0] == null || valueOnStack[1] == null) {
+			return null;
+		}
+		if (handle.getInstruction() instanceof DADD) {
+			return ((double)valueOnStack[0] + (double)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof FADD) {
+			return ((float)valueOnStack[0] + (float)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof IADD) {
+			return ((int)valueOnStack[0] + (int)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof LADD) {
+			return ((long)valueOnStack[0] + (long)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof DDIV) {
+			return ((double)valueOnStack[0] / (double)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof FDIV) {
+			return ((float)valueOnStack[0] / (float)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof IDIV) {
+			return ((int)valueOnStack[0] / (int)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof LDIV) {
+			return ((long)valueOnStack[0] / (long)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof DMUL) {
+			return ((double)valueOnStack[0] * (double)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof FMUL) {
+			return ((float)valueOnStack[0] * (float)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof IMUL) {
+			return ((int)valueOnStack[0] * (int)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof LMUL) {
+			return ((long)valueOnStack[0] * (long)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof DSUB) {
+			return ((double)valueOnStack[0] - (double)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof FSUB) {
+			return ((float)valueOnStack[0] - (float)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof ISUB) {
+			return ((int)valueOnStack[0] - (int)valueOnStack[1]);
+		}
+		if (handle.getInstruction() instanceof LSUB) {
+			return ((long)valueOnStack[0] - (long)valueOnStack[1]);
 		}
 	}
+
 	
 	private void optimizeMethod(ClassGen cgen, ConstantPoolGen cpgen, Method method) {
 		// Get the Code of the method, which is a collection of bytecode instructions
@@ -123,7 +204,33 @@ public class ConstantFolder {
 
 		// InstructionHandle is a wrapper for actual Instructions
 		for (InstructionHandle handle : instList.getInstructionHandles())	{
-			if (handle.getInstruction() instanceof StoreInstruction) {
+			if (handle.getInstruction() instanceof ArithmeticInstruction) {
+				Number result = getArithmeticRes(cpgen, handle);
+				if (result != null) {
+					int resultIndex = 0;
+          if (result instanceof Integer) {
+            resultindex = cpgen.addInteger((int) result);
+            instList.insert(handle, new LDC(resultindex));
+            instList.setPositions();
+          }
+          else if (result instanceof Float) {
+            resultindex = cpgen.addFloat((float) result);
+            instList.insert(handle, new LDC(resultindex));
+            instList.setPositions();
+          }
+          else if (result instanceof Double) {
+            resultindex = cpgen.addDouble((double) result);
+            instList.insert(handle, new LDC2_W(resultindex));
+            instList.setPositions();
+          }
+          else if (result instanceof Long) {
+            resultindex = cpgen.addLong((Long) result);
+            instList.insert(handle, new LDC2_W(resultindex));
+            instList.setPositions();
+          }
+        }
+			}
+			else if (handle.getInstruction() instanceof StoreInstruction) {
 				int index = ((StoreInstruction) handle.getInstruction()).getIndex();
 				if (checkConstantVar(instList, index)) {
 					if (handle.getPrev().getInstruction() instanceof BIPUSH) {
