@@ -47,10 +47,10 @@ public class ConstantFolder {
 	private boolean checkConstantVar(InstructionList instList, int storeIndex) {
 		int count = 0;
 		for (InstructionHandle handle : instList.getInstructionHandles()) {
-			if (handle.getInstruction() instanceof StoreInstruction) {
-				int index = ((StoreInstruction) handle.getInstruction()).getIndex();
+			if (handle.getInstruction() instanceof StoreInstruction || handle.getInstruction() instanceof IINC) {
+				int index = ((LocalVariableInstruction) handle.getInstruction()).getIndex();
 				if (storeIndex == index) count++;
-			}	
+			}
 			if (count > 1) return false;
 		}
 		return true;
