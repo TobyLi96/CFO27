@@ -58,8 +58,15 @@ public class ConstantFolder {
 
 	private void convertLoadInst(InstructionList instList, InstructionHandle pushHandle, int storeIndex, Number pushVal) {
 		InstructionHandle handle = pushHandle;
+		int storeCount = 0;
 		while (handle != null) {
-			if (handle.getInstruction() instanceof LoadInstruction) {
+			if (handle.getInstruction() instanceof StoreInstruction || handle.getInstruction() instanceof IINC) {
+				int index = ((LocalVariableInstruction) handle.getInstruction()).getIndex();
+				if (index == storeIndex) storeCount++;
+				if (storeCount > 1) break;
+				handle = handle.getNext();
+			}
+			else if (handle.getInstruction() instanceof LoadInstruction) {
 				int loadIndex = ((LoadInstruction) handle.getInstruction()).getIndex();
 				if (loadIndex == storeIndex) {
 					if (pushHandle.getInstruction() instanceof BIPUSH) {
@@ -714,7 +721,7 @@ public class ConstantFolder {
 			}
 			else if (handle.getInstruction() instanceof StoreInstruction) {
 				int index = ((StoreInstruction) handle.getInstruction()).getIndex();
-				if (checkConstantVar(instList, index)) {
+				// if (checkConstantVar(instList, index)) {
 					if (handle.getPrev().getInstruction() instanceof BIPUSH) {
 						Number pushVal = ((BIPUSH) handle.getPrev().getInstruction()).getValue();
 						convertLoadInst(instList, handle.getPrev(), index, pushVal);
@@ -747,7 +754,7 @@ public class ConstantFolder {
 						Number pushVal = ((LDC2_W) handle.getPrev().getInstruction()).getValue(cpgen);
 						convertLoadInst(instList, handle.getPrev(), index, pushVal);
 					}
-				}
+				// }
 			}
 		}
 
