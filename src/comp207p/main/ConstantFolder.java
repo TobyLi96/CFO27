@@ -563,7 +563,7 @@ public class ConstantFolder {
 						return ((BIPUSH) handle.getPrev().getInstruction()).getValue();
 					}
 					else if (handle.getPrev().getInstruction() instanceof SIPUSH) {
-						return ((BIPUSH) handle.getPrev().getInstruction()).getValue();
+						return ((SIPUSH) handle.getPrev().getInstruction()).getValue();
 					}
 					else if (handle.getPrev().getInstruction() instanceof LDC) {
 						return (Number) ((LDC) handle.getPrev().getInstruction()).getValue(cpgen);
@@ -620,7 +620,7 @@ public class ConstantFolder {
           }
 				}
 				else {
-					instList.insert(handle, new ICONST(inc));
+					instList.insert(handle, new BIPUSH(inc));
 					InstructionHandle temp = handle.getPrev();
 					instList.insert(handle, new ILOAD(index));
 					instList.insert(handle, new IADD());
