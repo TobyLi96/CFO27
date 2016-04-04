@@ -589,6 +589,7 @@ public class ConstantFolder {
 		MethodGen methodGen = new MethodGen(method.getAccessFlags(), method.getReturnType(), method.getArgumentTypes(), null, method.getName(), cgen.getClassName(), instList, cpgen);
 
 		// InstructionHandle is a wrapper for actual Instructions
+		// Turns IINC instructions into a series of push/local variable/constant pool instruction
 		for (InstructionHandle handle : instList.getInstructionHandles()) {
 			if (handle.getInstruction() instanceof IINC) {
 				int index = ((LocalVariableInstruction) handle.getInstruction()).getIndex();
@@ -620,7 +621,7 @@ public class ConstantFolder {
           }
 				}
 				else {
-					instList.insert(handle, new BIPUSH(inc));
+					instList.insert(handle, new BIPUSH((byte) inc));
 					InstructionHandle temp = handle.getPrev();
 					instList.insert(handle, new ILOAD(index));
 					instList.insert(handle, new IADD());
