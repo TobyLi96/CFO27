@@ -4,6 +4,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Iterator;
+import java.util.ArrayList;
 
 import org.apache.bcel.classfile.ClassParser;
 import org.apache.bcel.classfile.Code;
@@ -23,6 +24,8 @@ public class ConstantFolder {
 
 	JavaClass original = null;
 	JavaClass optimized = null;
+
+	ArrayList<String> loops = new ArrayList<String>();
 
 	public ConstantFolder(String classFilePath)	{
 		try {
@@ -56,10 +59,75 @@ public class ConstantFolder {
 		return true;
 	}
 
+	private boolean inLoop(int position) {
+		if (loops.isEmpty()) return false;
+		for (int i = 0; i < loops.size(); i++) {
+			if (position >= Integer.parseInt(loops.get(i).substring(0, loops.get(i).indexOf(','))) && position <= Integer.parseInt(loops.get(i).substring(loops.get(i).indexOf(',') + 1, loops.get(i).length()))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private int checkStoreInLoop(InstructionList instList, int loopStart, int storeIndex) {
+		int loopEnd = 0;
+		for (int i = 0; i < loops.size(); i++) {
+			if (loopStart == Integer.parseInt(loops.get(i).substring(0, loops.get(i).indexOf(',')))) {
+				loopEnd = Integer.parseInt(loops.get(i).substring(loops.get(i).indexOf(',') + 1, loops.get(i).length()));
+				break;
+			}
+		}
+		InstructionHandle handle = null;
+		for (InstructionHandle temp : instList.getInstructionHandles()) {
+			if (temp.getPosition() == loopStart) {
+				handle = temp;
+				break;
+			} 
+		}
+		boolean keepOrigStore = false;
+		while (handle.getPosition() != loopEnd) {
+			if (handle.getInstruction() instanceof LoadInstruction || handle.getInstruction() instanceof IINC) {
+				if (((LocalVariableInstruction) handle.getInstruction()).getIndex() == storeIndex) {
+					keepOrigStore = true;
+				}
+			}
+			if (handle.getInstruction() instanceof StoreInstruction || handle.getInstruction() instanceof IINC) {
+				if (((LocalVariableInstruction) handle.getInstruction()).getIndex() == storeIndex) {
+					if (keepOrigStore) {
+						return 2; // store is in loop after load
+					}
+					else {
+						return 1; // store is in loop before load
+					}					
+				}
+			}
+			handle = handle.getNext();	
+		}
+		return 0; // store is not in loop
+	}
+
 	private void convertLoadInst(InstructionList instList, InstructionHandle pushHandle, int storeIndex, Number pushVal) {
 		InstructionHandle handle = pushHandle;
 		int storeCount = 0;
+		boolean keepOrigStore = false;
+		boolean checkedLoop = false;
+		
 		while (handle != null) {
+			findLoops(instList);
+			if (!checkedLoop) {
+				if (inLoop(handle.getPosition())) {
+					if (checkStoreInLoop(instList, handle.getPosition(), storeIndex) == 1) {
+						break;
+					}
+					else if (checkStoreInLoop(instList, handle.getPosition(), storeIndex) == 2) {
+						keepOrigStore = true;
+						break;
+					}
+					else {
+						checkedLoop = true;
+					}
+				}	
+			}
 			if (handle.getInstruction() instanceof StoreInstruction || handle.getInstruction() instanceof IINC) {
 				int index = ((LocalVariableInstruction) handle.getInstruction()).getIndex();
 				if (index == storeIndex) storeCount++;
@@ -93,6 +161,7 @@ public class ConstantFolder {
 					else if (pushHandle.getInstruction() instanceof LDC2_W) {
 						instList.insert(handle, new LDC2_W(((CPInstruction) pushHandle.getInstruction()).getIndex()));	
 					}
+					instList.setPositions();
 					InstructionHandle temp = handle;
 					handle = handle.getNext();
 					deleteInst(instList, temp);
@@ -105,8 +174,16 @@ public class ConstantFolder {
 				handle = handle.getNext();
 			}
 		}
-		deleteInst(instList, pushHandle.getNext());
-		deleteInst(instList, pushHandle);
+		if (!keepOrigStore) {
+			try {
+				instList.redirectBranches(pushHandle, pushHandle.getNext().getNext());
+				instList.delete(pushHandle.getNext());
+				instList.delete(pushHandle);
+				instList.setPositions();
+			} catch(Exception e) {
+				// do nothing
+			}
+		}
 	}
 
 	private Number[] getArithmeticVals(ConstantPoolGen cpgen, InstructionHandle handle) {
@@ -577,6 +654,46 @@ public class ConstantFolder {
 		return null;
 	}
 
+	private void findLoops(InstructionList instList) {
+		loops.clear();
+		for (InstructionHandle handle : instList.getInstructionHandles()) {
+			if (handle.getInstruction() instanceof GOTO) {
+				InstructionHandle targetHandle = ((GOTO) handle.getInstruction()).getTarget();
+				if (handle.getPosition() > targetHandle.getPosition()) {
+					// if (targetHandle.getInstruction() instanceof IINC) {
+					// 	int index = ((LocalVariableInstruction) targetHandle.getInstruction()).getIndex();
+					// 	int inc = ((IINC) targetHandle.getInstruction()).getIncrement();
+					// 	instList.insert(handle, new IINC(index, inc));
+					// 	instList.setPositions();
+					// 	((BranchInstruction) handle.getInstruction()).updateTarget(targetHandle, targetHandle.getNext());
+					// 	instList.setPositions();
+					// }
+					targetHandle = ((GOTO) handle.getInstruction()).getTarget();
+					loops.add(Integer.toString(targetHandle.getPosition()) + "," + Integer.toString(handle.getPosition()));
+				}
+				else {
+					if (targetHandle.getInstruction() instanceof IINC) {
+						int index = ((LocalVariableInstruction) targetHandle.getInstruction()).getIndex();
+						int inc = ((IINC) targetHandle.getInstruction()).getIncrement();
+						instList.insert(targetHandle, new BIPUSH((byte) inc));
+						InstructionHandle temp = targetHandle.getPrev();
+						instList.insert(targetHandle, new ILOAD(index));
+						instList.insert(targetHandle, new IADD());
+						instList.insert(targetHandle, new ISTORE(index));
+						((BranchInstruction) handle.getInstruction()).updateTarget(targetHandle, temp);
+						try {
+							instList.redirectBranches(targetHandle, temp);
+							instList.delete(targetHandle);
+							instList.setPositions();
+						} catch(Exception e) {
+							// do nothing
+						}
+					}
+				}
+			}
+		}
+	}	
+
 	private void optimizeMethod(ClassGen cgen, ConstantPoolGen cpgen, Method method) {
 		// Get the Code of the method, which is a collection of bytecode instructions
 		Code methodCode = method.getCode();
@@ -587,11 +704,15 @@ public class ConstantFolder {
 
 		// Initialise a method generator with the original method as the baseline	
 		MethodGen methodGen = new MethodGen(method.getAccessFlags(), method.getReturnType(), method.getArgumentTypes(), null, method.getName(), cgen.getClassName(), instList, cpgen);
-
 		// InstructionHandle is a wrapper for actual Instructions
+		findLoops(instList);
 		// Turns IINC instructions into a series of push/local variable/constant pool instruction
 		for (InstructionHandle handle : instList.getInstructionHandles()) {
+			findLoops(instList);
 			if (handle.getInstruction() instanceof IINC) {
+				if (inLoop(handle.getPosition())) {
+					break;
+				}
 				int index = ((LocalVariableInstruction) handle.getInstruction()).getIndex();
 				Number prevVal = getPrevVal(instList, handle, cpgen, index);
 				int inc = ((IINC) handle.getInstruction()).getIncrement();
@@ -638,12 +759,13 @@ public class ConstantFolder {
 		}
 
 		for (InstructionHandle handle : instList.getInstructionHandles())	{
+			findLoops(instList);
 			if (handle.getInstruction() instanceof ArithmeticInstruction) {
 				Number[] result = getArithmeticRes(cpgen, handle);
 				if (result != null) {
-					for (int counter = (int) result[1]; counter != 0; counter--) {
-						deleteInst(instList, handle.getPrev());
-					}
+					// for (int counter = (int) result[1]; counter != 0; counter--) {
+					// 	deleteInst(instList, handle.getPrev());
+					// }
 					int cpIndex = 0;
 					if (result[0] instanceof Integer) {
 						cpIndex = cpgen.addInteger((int) result[0]);
@@ -665,13 +787,28 @@ public class ConstantFolder {
 						instList.insert(handle, new LDC2_W(cpIndex));
 						instList.setPositions();
 					}
+					try {
+						if ((int) result[1] == 2) {
+							instList.redirectBranches(handle.getPrev().getPrev().getPrev(), handle.getPrev());
+						}
+						else {
+							instList.redirectBranches(handle.getPrev().getPrev(), handle.getPrev());
+						}
+						for (int counter = (int) result[1]; counter != 0; counter--) {
+							deleteInst(instList, handle.getPrev().getPrev());
+						}
+						instList.setPositions();
+					} catch(Exception e) {
+						// do nothing
+					}
 					deleteInst(instList, handle);
 				}
 			}
 			else if (handle.getInstruction() instanceof ConversionInstruction) {
 				Number convertedNumber = getConversionRes(cpgen, handle);
 				if (convertedNumber != null) {
-					deleteInst(instList, handle.getPrev());
+					// boolean target = checkTarget(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
 					int cpIndex = 0;
 					if (convertedNumber instanceof Integer) {
 						cpIndex = cpgen.addInteger((int) convertedNumber);
@@ -693,6 +830,13 @@ public class ConstantFolder {
 						instList.insert(handle, new LDC2_W(cpIndex));
 						instList.setPositions();
 					}
+					try {
+						instList.redirectBranches(handle.getPrev().getPrev(), handle.getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.setPositions();
+					} catch(Exception e) {
+						// do nothing
+					}
 					deleteInst(instList, handle);
 				}
 			}
@@ -700,8 +844,8 @@ public class ConstantFolder {
 				Number[] valueOnStack = getArithmeticVals(cpgen, handle);
 				int value = 0;
 				if (valueOnStack[0] != null && valueOnStack[0] != null) {
-					deleteInst(instList, handle.getPrev());
-					deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
 					if ((long) valueOnStack[0] == (long) valueOnStack[1]) {
 						value = 0;
 					} 
@@ -712,6 +856,15 @@ public class ConstantFolder {
 						value = -1;
 					}
 					instList.insert(handle, new ICONST(value));
+					instList.setPositions();
+					try {
+						instList.redirectBranches(handle.getPrev().getPrev().getPrev(), handle.getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.setPositions();
+					} catch(Exception e) {
+						// do nothing
+					}
 					deleteInst(instList, handle);
 				}
 			}
@@ -719,8 +872,8 @@ public class ConstantFolder {
 				Number[] valueOnStack = getArithmeticVals(cpgen, handle);
 				int value = 0;
 				if (valueOnStack[0] != null && valueOnStack[0] != null) {
-					deleteInst(instList, handle.getPrev());
-					deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
 					if ((double) valueOnStack[0] == (double) valueOnStack[1]) {
 						value = 0;
 					} 
@@ -731,6 +884,15 @@ public class ConstantFolder {
 						value = -1;
 					}
 					instList.insert(handle, new ICONST(value));
+					instList.setPositions();
+					try {
+						instList.redirectBranches(handle.getPrev().getPrev().getPrev(), handle.getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.setPositions();
+					} catch(Exception e) {
+						// do nothing
+					}
 					deleteInst(instList, handle);
 				}
 			}
@@ -738,8 +900,8 @@ public class ConstantFolder {
 				Number[] valueOnStack = getArithmeticVals(cpgen, handle);
 				int value = 0;
 				if (valueOnStack[0] != null && valueOnStack[0] != null) {
-					deleteInst(instList, handle.getPrev());
-					deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
 					if ((double) valueOnStack[0] == (double) valueOnStack[1]) {
 						value = 0;
 					} 
@@ -750,6 +912,15 @@ public class ConstantFolder {
 						value = -1;
 					}
 					instList.insert(handle, new ICONST(value));
+					instList.setPositions();
+					try {
+						instList.redirectBranches(handle.getPrev().getPrev().getPrev(), handle.getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.setPositions();
+					} catch(Exception e) {
+						// do nothing
+					}
 					deleteInst(instList, handle);
 				}
 			}
@@ -757,8 +928,8 @@ public class ConstantFolder {
 				Number[] valueOnStack = getArithmeticVals(cpgen, handle);
 				int value = 0;
 				if (valueOnStack[0] != null && valueOnStack[0] != null) {
-					deleteInst(instList, handle.getPrev());
-					deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
 					if ((float) valueOnStack[0] == (float) valueOnStack[1]) {
 						value = 0;
 					} 
@@ -769,6 +940,14 @@ public class ConstantFolder {
 						value = -1;
 					}
 					instList.insert(handle, new ICONST(value));
+					try {
+						instList.redirectBranches(handle.getPrev().getPrev().getPrev(), handle.getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.setPositions();
+					} catch(Exception e) {
+						// do nothing
+					}
 					deleteInst(instList, handle);
 				}
 			}
@@ -776,8 +955,8 @@ public class ConstantFolder {
 				Number[] valueOnStack = getArithmeticVals(cpgen, handle);
 				int value = 0;
 				if (valueOnStack[0] != null && valueOnStack[0] != null) {
-					deleteInst(instList, handle.getPrev());
-					deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
+					// deleteInst(instList, handle.getPrev());
 					if ((float) valueOnStack[0] == (float) valueOnStack[1]) {
 						value = 0;
 					} 
@@ -788,6 +967,14 @@ public class ConstantFolder {
 						value = -1;
 					}
 					instList.insert(handle, new ICONST(value));
+					try {
+						instList.redirectBranches(handle.getPrev().getPrev().getPrev(), handle.getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.delete(handle.getPrev().getPrev());
+						instList.setPositions();
+					} catch(Exception e) {
+						// do nothing
+					}
 					deleteInst(instList, handle);
 				}
 			}
