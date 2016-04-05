@@ -72,7 +72,8 @@ public class ConstantFolder {
 	private int checkStoreInLoop(InstructionList instList, int loopStart, int storeIndex) {
 		int loopEnd = 0;
 		for (int i = 0; i < loops.size(); i++) {
-			if (loopStart == Integer.parseInt(loops.get(i).substring(0, loops.get(i).indexOf(',')))) {
+			if (loopStart >= Integer.parseInt(loops.get(i).substring(0, loops.get(i).indexOf(','))) && loopStart <= Integer.parseInt(loops.get(i).substring(loops.get(i).indexOf(',') + 1, loops.get(i).length()))) {
+				loopStart = Integer.parseInt(loops.get(i).substring(0, loops.get(i).indexOf(',')));
 				loopEnd = Integer.parseInt(loops.get(i).substring(loops.get(i).indexOf(',') + 1, loops.get(i).length()));
 				break;
 			}
@@ -116,10 +117,7 @@ public class ConstantFolder {
 			findLoops(instList);
 			if (inLoop(handle.getPosition())) {
 				if (!checkedLoop) {
-					if (checkStoreInLoop(instList, handle.getPosition(), storeIndex) == 1) {
-						break;
-					}
-					else if (checkStoreInLoop(instList, handle.getPosition(), storeIndex) == 2) {
+					if (checkStoreInLoop(instList, handle.getPosition(), storeIndex) == 2) {
 						keepOrigStore = true;
 						break;
 					}
