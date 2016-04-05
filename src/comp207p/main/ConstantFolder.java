@@ -114,8 +114,8 @@ public class ConstantFolder {
 		
 		while (handle != null) {
 			findLoops(instList);
-			if (!checkedLoop) {
-				if (inLoop(handle.getPosition())) {
+			if (inLoop(handle.getPosition())) {
+				if (!checkedLoop) {
 					if (checkStoreInLoop(instList, handle.getPosition(), storeIndex) == 1) {
 						break;
 					}
@@ -126,7 +126,12 @@ public class ConstantFolder {
 					else {
 						checkedLoop = true;
 					}
-				}	
+				}
+			}
+			else {
+				if (checkedLoop) {
+					checkedLoop = false;
+				}
 			}
 			if (handle.getInstruction() instanceof StoreInstruction || handle.getInstruction() instanceof IINC) {
 				int index = ((LocalVariableInstruction) handle.getInstruction()).getIndex();
