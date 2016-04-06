@@ -87,6 +87,20 @@ public class ConstantFolder {
 		}
 		boolean keepOrigStore = false;
 		while (handle.getPosition() != loopEnd) {
+			if (handle.getInstruction() instanceof IINC) {
+				if (((LocalVariableInstruction) handle.getInstruction()).getIndex() == storeIndex) {
+					return 2;
+				}
+			}
+			handle = handle.getNext();
+		}
+		for (InstructionHandle temp : instList.getInstructionHandles()) {
+			if (temp.getPosition() == loopStart) {
+				handle = temp;
+				break;
+			} 
+		}
+		while (handle.getPosition() != loopEnd) {
 			if (handle.getInstruction() instanceof LoadInstruction || handle.getInstruction() instanceof IINC) {
 				if (((LocalVariableInstruction) handle.getInstruction()).getIndex() == storeIndex) {
 					keepOrigStore = true;
@@ -633,27 +647,45 @@ public class ConstantFolder {
 		return null;
 	}
 	
-	private Number getPrevVal(InstructionList instList, InstructionHandle handle, ConstantPoolGen cpgen, int storeIndex) {
+	private Number[] getPrevVal(InstructionList instList, InstructionHandle handle, ConstantPoolGen cpgen, int storeIndex) {
+		Number[] prevVal = new Number[2];
 		while (handle != null) {
 			handle = handle.getPrev();
 			if (handle.getInstruction() instanceof StoreInstruction) {
 				int index = ((StoreInstruction) handle.getInstruction()).getIndex();
 				if (index == storeIndex) {
 					if (handle.getPrev().getInstruction() instanceof BIPUSH) {
-						return ((BIPUSH) handle.getPrev().getInstruction()).getValue();
+						prevVal[0] = ((BIPUSH) handle.getPrev().getInstruction()).getValue();
+						prevVal[1] = 0;
+						return prevVal;
 					}
 					else if (handle.getPrev().getInstruction() instanceof SIPUSH) {
-						return ((SIPUSH) handle.getPrev().getInstruction()).getValue();
+						prevVal[0] = ((SIPUSH) handle.getPrev().getInstruction()).getValue();
+						prevVal[1] = 0;
+						return prevVal;
 					}
 					else if (handle.getPrev().getInstruction() instanceof LDC) {
-						return (Number) ((LDC) handle.getPrev().getInstruction()).getValue(cpgen);
+						prevVal[0] = (Number) ((LDC) handle.getPrev().getInstruction()).getValue(cpgen);
+						prevVal[1] = 0;
+						return prevVal;
 					}
 					else {
-						return null;
+						prevVal[0] = null;
+						prevVal[1] = 0;
+						return prevVal;
 					}
 				}
 			}
+			else if (handle.getInstruction() instanceof IINC) {
+				int index = ((IINC) handle.getInstruction()).getIndex();
+				if (index == storeIndex) {
+					prevVal[0] = null;
+					prevVal[1] = 1;
+				}
+			}
 		}
+		prevVal[0] = null;
+		prevVal[1] = 0;
 		return null;
 	}
 
@@ -717,21 +749,21 @@ public class ConstantFolder {
 					break;
 				}
 				int index = ((LocalVariableInstruction) handle.getInstruction()).getIndex();
-				Number prevVal = getPrevVal(instList, handle, cpgen, index);
+				Number[] prevVal = getPrevVal(instList, handle, cpgen, index);
 				int inc = ((IINC) handle.getInstruction()).getIncrement();
-				if (prevVal != null) {
+				if (prevVal[0] != null) {
 					InstructionHandle temp = null;
-					if ((int) prevVal > 32767 || (int) prevVal < -32768) {
-						int cpIndex = cpgen.addInteger(((int) prevVal) + inc);
+					if ((int) prevVal[0] > 32767 || (int) prevVal[0] < -32768) {
+						int cpIndex = cpgen.addInteger(((int) prevVal[0]) + inc);
             instList.insert(handle, new LDC(cpIndex));
             instList.setPositions();
           } 
-          else if ((int) prevVal < -128 || (int) prevVal > 127) {
-            instList.insert(handle, new SIPUSH((short) ((int) prevVal + inc)));
+          else if ((int) prevVal[0] < -128 || (int) prevVal[0] > 127) {
+            instList.insert(handle, new SIPUSH((short) ((int) prevVal[0] + inc)));
             instList.setPositions();
           } 
           else {
-            instList.insert(handle, new BIPUSH((byte) ((int) prevVal + inc)));
+            instList.insert(handle, new BIPUSH((byte) ((int) prevVal[0] + inc)));
             instList.setPositions();
           }
           temp = handle.getPrev();
@@ -745,17 +777,19 @@ public class ConstantFolder {
           }
 				}
 				else {
-					instList.insert(handle, new BIPUSH((byte) inc));
-					InstructionHandle temp = handle.getPrev();
-					instList.insert(handle, new ILOAD(index));
-					instList.insert(handle, new IADD());
-					instList.insert(handle, new ISTORE(index));
-					try {
-						instList.redirectBranches(handle, temp);
-						instList.delete(handle);
-						instList.setPositions();
-					} catch(Exception e) {
-						// do nothing
+					if ((int) prevVal[1] == 0) {
+						instList.insert(handle, new BIPUSH((byte) inc));
+						InstructionHandle temp = handle.getPrev();
+						instList.insert(handle, new ILOAD(index));
+						instList.insert(handle, new IADD());
+						instList.insert(handle, new ISTORE(index));
+						try {
+							instList.redirectBranches(handle, temp);
+							instList.delete(handle);
+							instList.setPositions();
+						} catch(Exception e) {
+							// do nothing
+						}
 					}
 				}
 			}
