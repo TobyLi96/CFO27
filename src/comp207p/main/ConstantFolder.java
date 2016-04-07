@@ -122,7 +122,7 @@ public class ConstantFolder {
 	}
 
 	private void convertLoadInst(InstructionList instList, InstructionHandle pushHandle, int storeIndex, Number pushVal) {
-		InstructionHandle handle = pushHandle;
+		InstructionHandle handle = pushHandle.getNext().getNext();
 		int storeCount = 0;
 		boolean keepOrigStore = false;
 		boolean checkedLoop = false;
@@ -132,8 +132,13 @@ public class ConstantFolder {
 			if (inLoop(handle.getPosition())) {
 				if (!checkedLoop) {
 					if (checkStoreInLoop(instList, handle.getPosition(), storeIndex) == 2) {
-						keepOrigStore = true;
-						break;
+						if (inLoop(pushHandle.getNext().getPosition())) {
+							keepOrigStore = true;
+						}
+						else {
+							keepOrigStore = true;
+							break;	
+						}
 					}
 					else {
 						checkedLoop = true;
@@ -147,9 +152,8 @@ public class ConstantFolder {
 			}
 			if (handle.getInstruction() instanceof StoreInstruction || handle.getInstruction() instanceof IINC) {
 				int index = ((LocalVariableInstruction) handle.getInstruction()).getIndex();
-				if (index == storeIndex) storeCount++;
-				if (storeCount > 1) break;
-				handle = handle.getNext();
+				if (index == storeIndex) break;
+				else handle = handle.getNext();
 			}
 			else if (handle.getInstruction() instanceof LoadInstruction) {
 				int loadIndex = ((LoadInstruction) handle.getInstruction()).getIndex();
